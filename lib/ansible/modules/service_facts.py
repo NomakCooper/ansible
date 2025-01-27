@@ -58,6 +58,13 @@ EXAMPLES = r"""
     name: ntpd.service
   when: ansible_facts['services']['ntpd.service']['status'] | default('not-found') != 'not-found'
 
+- name: show names of existing systemd services in dead sub_state
+  debug:
+    msg: "{{ existing_systemd_services | selectattr('sub_state', 'equalto', 'dead') | map(attribute='name')}}"
+  vars:
+   known_systemd_services: "{{ ansible_facts['services'].values() | selectattr('source', 'equalto', 'systemd') }}"
+   existing_systemd_services: "{{ known_systemd_services | rejectattr('status', 'equalto', 'not-found') }}"
+
 """
 
 RETURN = r"""
@@ -87,6 +94,14 @@ ansible_facts:
           returned: always
           type: str
           sample: running
+        sub_state:
+          description:
+          - SUB State of the service.
+          - 'This commonly includes the low-level unit activation state, like: V(running), V(exited), V(dead), V(failed), V(inactive) or V(unknown).'
+          - Depending on the used init system additional states might be returned.
+          returned: if source is V(systemd)
+          type: str
+          sample: dead
         status:
           description:
           - State of the service.
@@ -289,10 +304,11 @@ class SystemctlScanService(BaseService):
                     status_val = fields[2]
 
                 service_name = fields[0]
-                if fields[3] == "running":
+                sub_state_val = fields[3]
+                if sub_state_val == "running":
                     state_val = "running"
 
-                services[service_name] = {"name": service_name, "state": state_val, "status": status_val, "source": "systemd"}
+                services[service_name] = {"name": service_name, "state": state_val, "sub_state": sub_state_val, "status": status_val, "source": "systemd"}
 
     def _list_from_unit_files(self, systemctl_path, services):
 
@@ -312,7 +328,7 @@ class SystemctlScanService(BaseService):
                     state = 'unknown'
                     if not rc and stdout != '':
                         state = stdout.replace('ActiveState=', '').rstrip()
-                    services[service_name] = {"name": service_name, "state": state, "status": status_val, "source": "systemd"}
+                    services[service_name] = {"name": service_name, "state": state, "sub_state": state, "status": status_val, "source": "systemd"}
                 elif services[service_name]["status"] not in self.BAD_STATES:
                     services[service_name]["status"] = status_val
 
